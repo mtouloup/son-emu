@@ -19,8 +19,6 @@
 // products derived from this software without specific prior written
 // permission.
 
-#!groovy
-
 pipeline {
     agent any
     stages {
