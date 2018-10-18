@@ -74,7 +74,7 @@ DEPLOY_SAP = False
 
 # flag to indicate if we use bidirectional forwarding rules in the
 # automatic chaining process
-BIDIRECTIONAL_CHAIN = False
+BIDIRECTIONAL_CHAIN = True
 
 # override the management interfaces in the descriptors with default
 # docker0 interfaces in the containers
@@ -346,6 +346,11 @@ class Service(object):
             # check if we need to deploy the management ports (defined as
             # type:management both on in the vnfd and nsd)
             intfs = vnfd.get("connection_points", [])
+            # do some re-naming of fields to be compatible to containernet
+            for i in intfs:
+                if i.get("address"):
+                    i["ip"] = i.get("address")
+
             mgmt_intf_names = []
             if USE_DOCKER_MGMT:
                 mgmt_intfs = [vnf_id + ':' + intf['id']
@@ -397,6 +402,9 @@ class Service(object):
                 mem_limit=mem_lim,
                 volumes=volumes,
                 type=kwargs.get('type', 'docker'))
+
+            # add vnfd reference to vnfi
+            vnfi.vnfd = vnfd
 
             # rename the docker0 interfaces (eth0) to the management port name
             # defined in the VNFD
@@ -650,6 +658,7 @@ class Service(object):
         # eg. different services get a unique cookie for their flowrules
         cookie = 1
         for link in eline_fwd_links:
+            LOG.info("Found E-Line: {}".format(link))
             # check if we need to deploy this link when its a management link:
             if USE_DOCKER_MGMT:
                 if self.check_mgmt_interface(
@@ -699,24 +708,34 @@ class Service(object):
 
             # Link between 2 VNFs
             else:
+                LOG.info("Creating E-Line: src={}, dst={}"
+                         .format(src_id, dst_id))
                 # make sure we use the correct sap vnf name
                 if src_sap_id in self.saps_int:
                     src_id = src_sap_id
                 if dst_sap_id in self.saps_int:
                     dst_id = dst_sap_id
-                # re-configure the VNFs IP assignment and ensure that a new
-                # subnet is used for each E-Link
+                # get involved vnfis
                 src_vnfi = self._get_vnf_instance(instance_uuid, src_id)
                 dst_vnfi = self._get_vnf_instance(instance_uuid, dst_id)
+
                 if src_vnfi is not None and dst_vnfi is not None:
+                    setChaining = True
+                    # re-configure the VNFs IP assignment and ensure that a new
+                    # subnet is used for each E-Link
                     eline_net = ELINE_SUBNETS.pop(0)
                     ip1 = "{0}/{1}".format(str(eline_net[1]),
                                            eline_net.prefixlen)
                     ip2 = "{0}/{1}".format(str(eline_net[2]),
                                            eline_net.prefixlen)
-                    self._vnf_reconfigure_network(src_vnfi, src_if_name, ip1)
-                    self._vnf_reconfigure_network(dst_vnfi, dst_if_name, ip2)
-                    setChaining = True
+                    # check if VNFs have fixed IPs (address field in VNFDs)
+                    if (self._get_vnfd_cp_from_vnfi(src_vnfi, src_if_name)
+                            .get("address") is None):
+                        self._vnf_reconfigure_network(src_vnfi, src_if_name, ip1)
+                    # check if VNFs have fixed IPs (address field in VNFDs)
+                    if (self._get_vnfd_cp_from_vnfi(dst_vnfi, dst_if_name)
+                            .get("address") is None):
+                        self._vnf_reconfigure_network(dst_vnfi, dst_if_name, ip2)
 
             # Set the chaining
             if setChaining:
@@ -724,9 +743,18 @@ class Service(object):
                     src_id, dst_id,
                     vnf_src_interface=src_if_name, vnf_dst_interface=dst_if_name,
                     bidirectional=BIDIRECTIONAL_CHAIN, cmd="add-flow", cookie=cookie, priority=10)
-                LOG.debug(
-                    "Setting up E-Line link. (%s:%s) -> (%s:%s)" % (
-                        src_id, src_if_name, dst_id, dst_if_name))
+
+    def _get_vnfd_cp_from_vnfi(self, vnfi, ifname):
+        """
+        Gets the connection point data structure from the VNFD
+        of the given VNFI using ifname.
+        """
+        if vnfi.vnfd is None:
+            return {}
+        cps = vnfi.vnfd.get("connection_points")
+        for cp in cps:
+            if cp.get("id") == ifname:
+                return cp
 
     def _connect_elans(self, elan_fwd_links, instance_uuid):
         """
@@ -1049,7 +1077,7 @@ class Packages(fr.Resource):
             file_hash = hashlib.sha1(str(son_file)).hexdigest()
             # ensure that upload folder exists
             ensure_dir(UPLOAD_FOLDER)
-            upload_path = os.path.join(UPLOAD_FOLDER, "%s.son" % service_uuid)
+            upload_path = os.path.join(UPLOAD_FOLDER, "%s.tgo" % service_uuid)
             # store *.son file to disk
             if is_file_object:
                 son_file.save(upload_path)
