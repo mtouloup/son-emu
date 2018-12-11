@@ -124,7 +124,6 @@ To run the unit tests do:
 * Eduard Maas (https://github.com/edmaas)
 * Malte Splietker (https://github.com/splietker)
 * Johannes Kampmeyer (https://github.com/xschlef)
-* Stefan Schneider (https://github.com/StefanUPB)
 
 ## License
 
