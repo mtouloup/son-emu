@@ -1,5 +1,4 @@
-
-peline {
+pipeline {
     agent any
     stages {
         stage('Checkout') {
@@ -17,7 +16,7 @@ peline {
         stage('Style check') {
             steps {
                 echo 'Style check...'
-                sh "docker run --name son-emu --rm --privileged --pid='host' -v /var/run/docker.sock:/var/run/docker.sock sonatanfv/son-emu:dev 'flake8 --exclude=.eggs,devops --ignore=E501 .'"
+                sh "docker run --name son-emu --rm --privileged --pid='host' -v /var/run/docker.sock:/var/run/docker.sock sonatanfv/son-emu:dev 'flake8 --exclude=.eggs,devops --ignore=E501,W605,W504 .'"
                 echo "done."
             }
         }
